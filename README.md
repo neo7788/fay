@@ -1,6 +1,6 @@
 
 # Tenparty十方AI平台
-通过魔珐星云做虚拟人的对话沟通界面+fay作为AI后台+结合Tenparty命理预测uinapp端八字命理、奇门遁甲盘调用大模型进行预测问答
+是一个开源项目，通过魔珐星云做虚拟人的对话沟通界面+fay作为AI后台+结合Tenparty命理预测uinapp端八字命理、奇门遁甲盘调用大模型进行预测问答
 <img width="1200" height="1240" alt="image" src="https://media.xingyun3d.com/xingyun3d/www/index/features-1.jpg?x-oss-process=image/format,webp" />
 
 【XmovAvatarSDK】
