@@ -1,7 +1,7 @@
 # Tenparty十方AI平台
 通过魔珐星云做虚拟人的对话沟通界面+fay作为AI后台+结合Tenparty命理预测uinapp端八字命理、奇门遁甲盘调用大模型进行预测问答
 
-<img width="1200" height="1240" alt="image" src="https://media.xingyun3d.com/xingyun3d/www/index/features-1.jpg" />
+<img width="1200" height="1240" alt="image" src="[https://media.xingyun3d.com/xingyun3d/www/index/features-1.jpg](https://media.xingyun3d.com/xingyun3d/www/index/features-1.jpg?x-oss-process=image/format,webp)" />
 【XmovAvatarSDK】
 这是一个基于魔珐星云sdk构建的智能虚拟人交互演示应用，集成了语音识别、大语言模型和虚拟人SDK，提供完整的语音交互体验。
 
