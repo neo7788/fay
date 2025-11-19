@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fay - xmov数字人</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #1a1a1a;
+      overflow: hidden;
+    }
+    #sdk-container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+    #sdk {
+      width: 100%;
+      height: 100%;
+    }
+    .status-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      color: white;
+      padding: 15px 20px;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .status-info {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+      animation: pulse 2s infinite;
+    }
+    .status-dot.active {
+      background: #4CAF50;
+    }
+    .status-dot.error {
+      background: #f44336;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .config-error {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+      text-align: center;
+      max-width: 500px;
+      z-index: 2000;
+    }
+    .config-error h2 {
+      color: #f44336;
+      margin-bottom: 15px;
+    }
+    .config-error p {
+      color: #666;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .config-error code {
+      display: block;
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 6px;
+      text-align: left;
+      margin: 15px 0;
+      font-size: 12px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <!-- 状态栏 -->
+  <div class="status-bar">
+    <div class="status-info">
+      <div class="status-item">
+        <span class="status-dot" id="sdkStatus"></span>
+        <span id="sdkStatusText">初始化中...</span>
+      </div>
+      <div class="status-item">
+        <span class="status-dot" id="wsStatus"></span>
+        <span id="wsStatusText">未连接</span>
+      </div>
+    </div>
+    <div style="font-size: 11px; color: #888;">
+      xmov 数字人 | Fay驱动接口:10002
+    </div>
+  </div>
+
+  <!-- SDK容器 -->
+  <div id="sdk-container">
+    <div id="sdk"></div>
+  </div>
+
+  <!-- 配置错误提示（默认隐藏） -->
+  <div class="config-error" id="configError" style="display: none;">
+    <h2>⚠️ 配置未完成</h2>
+    <p>请在 <strong>Windows系统环境变量</strong> 中配置 xmov 参数：</p>
+    <code>变量名: XMOV_APP_ID<br>变量值: 您的AppID<br><br>变量名: XMOV_APP_SECRET<br>变量值: 您的AppSecret</code>
+    <p style="margin-top: 15px; font-size: 13px;">
+      在 <a href="https://xingyun3d.com/" target="_blank" style="color: #667eea;">魔珐星云</a>
+      应用中心创建驱动应用后获取。配置后需<strong>重启应用程序</strong>。
+    </p>
+  </div>
+
+  <!-- 引入xmov SDK -->
+  <script src="https://media.youyan.xyz/youling-lite-sdk/index.umd.0.1.0-alpha.63.js"></script>
+
+  <script>
+    // 从后端模板获取配置
+    const XMOV_CONFIG = {
+      appId: '{{ xmov_app_id }}',
+      appSecret: '{{ xmov_app_secret }}',
+      gatewayServer: 'https://nebula-agent.xingyun3d.com/user/v1/ttsa/session'
+    };
+
+    let liteSDK = null;
+    let websocket = null;
+
+    // 更新SDK状态
+    function updateSDKStatus(text, isActive = false, isError = false) {
+      const dot = document.getElementById('sdkStatus');
+      const textEl = document.getElementById('sdkStatusText');
+
+      dot.className = 'status-dot';
+      if (isActive) dot.classList.add('active');
+      if (isError) dot.classList.add('error');
+
+      textEl.textContent = text;
+    }
+
+    // 更新WebSocket状态
+    function updateWSStatus(text, isActive = false, isError = false) {
+      const dot = document.getElementById('wsStatus');
+      const textEl = document.getElementById('wsStatusText');
+
+      dot.className = 'status-dot';
+      if (isActive) dot.classList.add('active');
+      if (isError) dot.classList.add('error');
+
+      textEl.textContent = text;
+    }
+
+    // 检查配置
+    function checkConfig() {
+      if (!XMOV_CONFIG.appId || !XMOV_CONFIG.appSecret ||
+          XMOV_CONFIG.appId.trim() === '' || XMOV_CONFIG.appSecret.trim() === '') {
+        document.getElementById('configError').style.display = 'block';
+        updateSDKStatus('配置缺失', false, true);
+        return false;
+      }
+      return true;
+    }
+
+    // 初始化xmov SDK
+    function initXmovSDK() {
+      if (!checkConfig()) return;
+
+      updateSDKStatus('正在初始化...', false, false);
+
+      try {
+        liteSDK = new XmovAvatar({
+          containerId: '#sdk',
+          appId: XMOV_CONFIG.appId,
+          appSecret: XMOV_CONFIG.appSecret,
+          gatewayServer: XMOV_CONFIG.gatewayServer,
+
+          onWidgetEvent(data) {
+            console.log('[xmov] Widget事件:', data);
+          },
+
+          onNetworkInfo(networkInfo) {
+            console.log('[xmov] 网络信息:', networkInfo);
+          },
+
+          onMessage(message) {
+            console.log('[xmov] SDK消息:', message);
+          },
+
+          onStateChange(state) {
+            console.log('[xmov] 状态变化:', state);
+          },
+
+          onStatusChange(status) {
+            console.log('[xmov] SDK状态:', status);
+          },
+
+          onStateRenderChange(state, duration) {
+            console.log('[xmov] 渲染状态:', state, duration);
+          },
+
+          onVoiceStateChange(status) {
+            console.log('[xmov] 音频状态:', status);
+            if (status === 'start') {
+              updateSDKStatus('正在说话', true);
+            } else if (status === 'end') {
+              updateSDKStatus('就绪', true);
+            }
+          },
+
+          enableLogger: true
+        });
+
+        // 初始化SDK
+        liteSDK.init({
+          onDownloadProgress: (progress) => {
+            updateSDKStatus(`加载资源 ${progress}%`, false);
+          },
+          onError: (error) => {
+            console.error('[xmov] SDK错误:', error);
+            updateSDKStatus('初始化失败', false, true);
+          },
+          onClose: () => {
+            console.log('[xmov] SDK连接关闭');
+            updateSDKStatus('连接已关闭', false, true);
+          }
+        }).then(() => {
+          updateSDKStatus('就绪', true);
+          connectWebSocket();
+        }).catch(err => {
+          console.error('[xmov] SDK初始化失败:', err);
+          updateSDKStatus('初始化失败', false, true);
+        });
+      } catch (error) {
+        console.error('[xmov] 创建SDK实例失败:', error);
+        updateSDKStatus('初始化失败', false, true);
+      }
+    }
+
+    // 连接Fay的WebSocket服务器（10002端口）
+    function connectWebSocket() {
+      const wsUrl = 'ws://127.0.0.1:10002';
+      updateWSStatus('连接中...', false);
+
+      try {
+        websocket = new WebSocket(wsUrl);
+
+        websocket.onopen = function() {
+          console.log('[Fay] 已连接到数字人接口');
+          updateWSStatus('已连接', true);
+
+          // 发送用户名和Output设置
+          websocket.send(JSON.stringify({
+            Username: 'User',
+            Output: false  // 告诉Fay需要音频输出
+          }));
+        };
+
+        websocket.onmessage = function(event) {
+          try {
+            const message = JSON.parse(event.data);
+            console.log('[Fay] 收到消息:', message);
+
+            // 处理文本消息（新增）
+            if (message.Data && message.Data.Key === 'text') {
+              const text = message.Data.Value || '';
+              const isFirst = message.Data.IsFirst === 1;
+              const isEnd = message.Data.IsEnd === 1;
+
+              if (text && text.trim()) {
+                // 调用xmov SDK的speak方法
+                console.log('[xmov] 收到文本消息:', text, { is_start: isFirst, is_end: isEnd });
+                liteSDK.speak(text, isFirst, isEnd);
+              }
+            }
+
+            // 处理音频消息
+            else if (message.Data && message.Data.Key === 'audio') {
+              const text = message.Data.Text || '';
+              const isFirst = message.Data.IsFirst === 1;
+              const isEnd = message.Data.IsEnd === 1;
+
+              if (text && text.trim()) {
+                // 调用xmov SDK的speak方法
+                console.log('[xmov] 开始说话:', text, { is_start: isFirst, is_end: isEnd });
+                liteSDK.speak(text, isFirst, isEnd);
+              }
+            }
+
+            // 处理其他消息类型
+            else if (message.Data && message.Data.Key === 'question') {
+              console.log('[Fay] 用户问题:', message.Data.Value);
+            }
+
+          } catch (error) {
+            console.error('[Fay] 处理消息出错:', error);
+          }
+        };
+
+        websocket.onerror = function(error) {
+          console.error('[Fay] WebSocket错误:', error);
+          updateWSStatus('连接错误', false, true);
+        };
+
+        websocket.onclose = function() {
+          console.log('[Fay] WebSocket连接已关闭');
+          updateWSStatus('连接断开', false, true);
+
+          // 5秒后尝试重连
+          setTimeout(() => {
+            if (liteSDK) {
+              console.log('[Fay] 尝试重新连接...');
+              connectWebSocket();
+            }
+          }, 5000);
+        };
+      } catch (error) {
+        console.error('[Fay] 创建WebSocket连接失败:', error);
+        updateWSStatus('连接失败', false, true);
+      }
+    }
+
+    // 页面加载后初始化
+    window.onload = function() {
+      console.log('[启动] 开始初始化xmov数字人...');
+      initXmovSDK();
+    };
+
+    // 页面卸载时清理
+    window.onbeforeunload = function() {
+      console.log('[关闭] 清理资源...');
+      if (liteSDK) {
+        liteSDK.destroy();
+      }
+      if (websocket) {
+        websocket.close();
+      }
+    };
+  </script>
+</body>
+</html>
